@@ -17,10 +17,12 @@
 - 取り組んだレベル：実装
 - 変えた設定やデータ：課題の締め切りではなく食品の賞味期限に変更した
 - 結果（比較表や数字）：
-- 	FAQ にある	学習前の分類	学習前の出力	学習後の分類	学習後の出力
-0	この食品の食べられる期限はいつですか	False	format_error	{"answer": "1 日"}	asserted	{"answer": "食品Aの賞味期限は製造から7日以内です。", "needs_review": false}
-1	食品Aの正式名称は何ですか	False	format_error	{"answer": "確認が必要"}	needs_review	{"answer": "この FAQ には記載がありません。運営に確認が必要です。", "needs_review": true}
-2	フライパンで焼くとどうなりますか	False	format_error	{"answer": "確認が必要"}	needs_review	{"answer": "この FAQ には記載がありません。運営に確認が必要です。", "needs_review": true}
-3	いくつ入ってますか	False	asserted	{"answer": "5", "needs_review": false}	asserted	{"answer": "1パックの内容量は50gが5個入りです", "needs_review": false}
 
-- ファインチューニングが向く場面・向かない場面についての考察：後付けの設定変更（顧客の追加要望や制度改正の反映など）には即座に対応しづらい可能性。
+| No | 質問 | FAQにある | 学習前の分類 | 学習前の出力 | 学習後の分類 | 学習後の出力 |
+|---:|---|---|---|---|---|---|
+| 0 | この食品の食べられる期限はいつですか | False | format_error | `{"answer": "1 日"}` | asserted | `{"answer": "食品Aの賞味期限は製造から7日以内です。", "needs_review": false}` |
+| 1 | 食品Aの正式名称は何ですか | False | format_error | `{"answer": "確認が必要"}` | needs_review | `{"answer": "この FAQ には記載がありません。運営に確認が必要です。", "needs_review": true}` |
+| 2 | フライパンで焼くとどうなりますか | False | format_error | `{"answer": "確認が必要"}` | needs_review | `{"answer": "この FAQ には記載がありません。運営に確認が必要です。", "needs_review": true}` |
+| 3 | いくつ入ってますか | False | asserted | `{"answer": "5", "needs_review": false}` | asserted | `{"answer": "1パックの内容量は50gが5個入りです", "needs_review": false}` |
+
+- ファインチューニングが向く場面・向かない場面についての考察：後付けの設定変更（顧客の追加要望や制度改正の反映など）には即座に対応しづらく、データや評価軸の再設計が必要になる一方で、既知の業務知識に対しては安定して高い整合性を出せる。逆に、広い範囲の正解が変動しやすい入力では、強いガイドライン設計や人手レビューが必要になる。
