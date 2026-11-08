@@ -5,10 +5,14 @@
 """
 
 import json
+import random
+from datetime import datetime
 from functools import cache
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+LEARNING_LOG_DIR = Path(__file__).resolve().parent.parent / "learning_log"
 MAX_RESULTS = 3
 
 
@@ -77,3 +81,76 @@ def get_lecture_summary(lecture: int) -> str:
         available = sorted(p.stem for p in (DATA_DIR / "lectures").glob("*.md"))
         return f"第{lecture}回の要点はまだありません。用意されている回: {', '.join(available)}"
     return path.read_text(encoding="utf-8")
+
+
+def make_quiz(lecture: int) -> str:
+    """指定した回の用語から1つ選び、確認問題と答えを返す。
+
+    用語の定義から用語名を答える問題を作る。講義内容の理解を確認したいときに使う。
+    """
+    terms = [term for term in load_glossary() if term["lecture"] == lecture]
+    if not terms:
+        available = sorted({term["lecture"] for term in load_glossary()})
+        return f"第{lecture}回の用語はありません。用語がある回: {', '.join(map(str, available))}"
+
+    term = random.choice(terms)
+    return f"問題: 次の説明に当てはまる用語は何ですか？\n{term['definition']}\n答え: {term['term']}"
+
+
+def get_learning_log() -> str:
+    """今日すでに保存した学習記録を返す。
+
+    今日学んだことの振り返りや、今日の記録をまとめる依頼に使う。
+    """
+    now = datetime.now(ZoneInfo("Asia/Tokyo"))
+    log_path = LEARNING_LOG_DIR / f"{now:%Y-%m-%d}.md"
+    if not log_path.exists():
+        return "今日はまだ学習記録がありません。"
+    return log_path.read_text(encoding="utf-8")
+
+
+def save_learning_log(
+    summary: str,
+    question: str = "",
+    answer: str = "",
+    glossary_results: str = "",
+    understood_points: str = "",
+    unresolved_questions: str = "",
+    review_next: str = "",
+    change_description: str = "",
+    answer_before: str = "",
+    answer_after: str = "",
+) -> str:
+    """学習内容を項目別に日付ごとのログへ追記する。
+
+    保存を明示的に頼まれたときに使う。現在の質問と回答、用語集の結果、
+    理解した点、未解決の疑問、次に復習することを分かる範囲で記録する。
+    指示やツールの変更前後を比較する場合は、変更内容と両方の回答も記録する。
+    根拠がない項目は空のままにする。
+    """
+    if not summary.strip():
+        return "学習記録が空のため保存しませんでした。"
+
+    now = datetime.now(ZoneInfo("Asia/Tokyo"))
+    timestamp = now.strftime("%Y-%m-%d %H:%M:%S %Z")
+    log_path = LEARNING_LOG_DIR / f"{now:%Y-%m-%d}.md"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    sections = [
+        ("今日のまとめ", summary),
+        ("質問", question),
+        ("エージェントの回答", answer),
+        ("用語集の結果", glossary_results),
+        ("理解できたこと", understood_points),
+        ("まだ分からないこと", unresolved_questions),
+        ("次に復習すること", review_next),
+        ("変更内容", change_description),
+        ("変更前の回答", answer_before),
+        ("変更後の回答", answer_after),
+    ]
+    record = [f"## {timestamp}"]
+    for heading, value in sections:
+        if value.strip():
+            record.extend(["", f"### {heading}", value.strip()])
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write("\n".join(record) + "\n\n")
+    return f"学習記録を learning_log/{log_path.name} に保存しました。"
