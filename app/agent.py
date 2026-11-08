@@ -16,11 +16,11 @@ import inspect
 import json
 from pathlib import Path
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, DeferredToolRequests
 from pydantic_ai.exceptions import ModelHTTPError
 from fastmcp import Client
 from pydantic_ai.mcp import MCPToolset, StdioTransport
-from pydantic_ai.messages import ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import ModelMessagesTypeAdapter, ToolCallPart, ToolReturnPart
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.providers.google import GoogleProvider
@@ -32,16 +32,21 @@ INSTRUCTIONS = """\
 あなたはAIエンジニアリング講座（AIE2026）の学習支援エージェントです。
 - 用語や講座に固有のことを答える前に、必ず search_glossary で用語集を確認する。
 - 回の内容を聞かれたら get_lecture_summary を使う。
+- 今日の学習記録の振り返りを頼まれたら get_learning_log を確認する。
+- 学習記録の保存を明示的に頼まれたときだけ save_learning_log を使う。質問、回答、用語集の結果、理解点、未解決点、復習予定を記録し、根拠のない項目は空にする。
+- 指示やツールの変更前後の比較を頼まれたら、変更内容と変更前後の回答を分けて記録する。
 - 用語集に見つからないことは、推測で断定せず「用語集にはない」と伝える。
 - 回答の最後に、関係する回（第N回）を示す。
 - 宿題の答えそのものは書かず、考え方のヒントで導く。
 """
 
 # モデルは実行時に渡す（テストではAPIを呼ばない TestModel に差し替えるため）
-agent = Agent(instructions=INSTRUCTIONS)
+agent = Agent(instructions=INSTRUCTIONS, output_type=[str, DeferredToolRequests])
 agent.tool_plain(tools.search_glossary)
 agent.tool_plain(tools.get_lecture_summary)
 agent.tool_plain(tools.make_quiz)
+agent.tool_plain(tools.get_learning_log)
+agent.tool_plain(tools.save_learning_log, requires_approval=True)
 
 # 第5回: 使う MCP サーバーの設定ファイル。Claude Desktop や Cursor と同じ "mcpServers" 形式
 MCP_CONFIG = Path(__file__).resolve().parent / "mcp_servers.json"
@@ -108,6 +113,41 @@ def print_trace(result) -> None:
     print(f"[usage] {result.usage}")
 
 
+def conversation_history_path() -> Path:
+    today = tools.datetime.now(tools.ZoneInfo("Asia/Tokyo")).strftime("%Y-%m-%d")
+    return tools.LEARNING_LOG_DIR / f"conversation-{today}.json"
+
+
+def load_conversation_history(path: Path) -> list:
+    if not path.exists():
+        return []
+    return ModelMessagesTypeAdapter.validate_json(path.read_bytes())
+
+
+def save_conversation_history(path: Path, messages: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(messages)
+
+
+def run_with_approval(target: Agent, question: str, model, message_history=None):
+    result = target.run_sync(question, model=model, message_history=message_history)
+    while isinstance(result.output, DeferredToolRequests):
+        requests = result.output
+        approvals = {}
+        for call in requests.approvals:
+            print(f"\n保存ツールの実行承認が必要です。内容: {json.dumps(call.args, ensure_ascii=False)}")
+            answer = input("この学習記録を保存しますか？ [y/N]: ").strip().lower()
+            approvals[call.tool_call_id] = answer in {"y", "yes"}
+        if requests.calls:
+            raise RuntimeError("未対応の外部実行要求があります")
+        result = target.run_sync(
+            message_history=result.all_messages(),
+            deferred_tool_results=requests.build_results(approvals=approvals),
+            model=model,
+        )
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="学習支援エージェントに質問する")
     parser.add_argument("question", nargs="?")
@@ -127,10 +167,13 @@ def main() -> None:
     if args.mcp:
         print("[tools] MCP サーバー（app/mcp_servers.json）")
     try:
-        result = target.run_sync(args.question, model=build_model())
+        history_path = conversation_history_path()
+        history = load_conversation_history(history_path)
+        result = run_with_approval(target, args.question, build_model(), history)
     except ModelHTTPError as e:
         print(api_error_message(e.status_code, str(e.body)[:200]))
         raise SystemExit(1)
+    save_conversation_history(history_path, result.all_messages_json())
     print(result.output)
     if args.trace:
         print_trace(result)
