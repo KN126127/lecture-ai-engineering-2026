@@ -52,10 +52,9 @@ Verdict = Literal["pass", "fail", "unsure"]
 
 
 class CriterionVerdict(BaseModel):
-    """1 つの基準に対する判定。reason を先に書かせてから verdict を決めさせる（理由→判定の順）。"""
-
-    reason: str = Field(description="判定の理由。日本語で 1〜2 文")
+    """1 つの基準に対する判定。verdict、reason の順。"""
     verdict: Verdict = Field(description="pass / fail / unsure のどれか")
+    reason: str = Field(description="判定の理由。日本語で 1〜2 文")
 
 
 class JudgeResult(BaseModel):
@@ -117,8 +116,8 @@ def judge_prompt(case: dict) -> str:
 def build_judge(model, rubric: str) -> Agent:
     instructions = rubric + (
         "\n\n# 出力の形式\n"
-        "4 つの基準（grounding, scope, hint, clarity）それぞれについて、reason（理由）を先に書き、"
-        "そのあとで verdict を pass / fail / unsure のどれかにしてください。"
+        "4 つの基準（grounding, scope, hint, clarity）それぞれについて、verdict を pass / fail / unsure のどれかで示し、"
+        "そのあとで reason（理由）を書いてください。"
     )
     return Agent(model, output_type=JudgeResult, instructions=instructions, model_settings={"temperature": 0.0})
 
@@ -145,7 +144,7 @@ def _rule_based_judge(messages: list[ModelMessage], info: AgentInfo) -> ModelRes
     a = prompt.split("# 回答", 1)[-1].split("# 参照", 1)[0]
 
     def v(reason, verdict):
-        return {"reason": reason, "verdict": verdict}
+        return {"verdict": verdict, "reason": reason}
 
     if "用語集に「" in a and ("ありません" in a or "見つかりません" in a) and "一般には" in a:
         # STEP 3 で「根拠」に方針が書き足されていれば、それに従う（…（pass）→ pass、…（fail）→ fail）
@@ -189,7 +188,7 @@ def build_test_model() -> FunctionModel:
 
 # ---------------------------------------------------------------- 採点と集計
 def judge_cases(agent: Agent, cases: list[dict], wait: float = 0.0) -> dict[str, dict]:
-    """評価セットを 1 件ずつ採点する。戻り値は id → {基準: {reason, verdict}}。"""
+    """評価セットを 1 件ずつ採点する。戻り値は id → {基準: {verdict, reason}}。"""
     verdicts: dict[str, dict] = {}
     print(f"採点中 {len(cases)} 件 ", end="", flush=True)
     for case in cases:
@@ -197,8 +196,8 @@ def judge_cases(agent: Agent, cases: list[dict], wait: float = 0.0) -> dict[str,
         out: JudgeResult = result.output
         verdicts[case["id"]] = {key: getattr(out, key).model_dump() for key, _ in LLM_CRITERIA}
         verdicts[case["id"]]["lecture_mark"] = {
-            "reason": "末尾（最後の行）に「第N回」があるかをコードで判定",
             "verdict": check_lecture_mark(case["answer"]),
+            "reason": "末尾（最後の行）に「第N回」があるかをコードで判定",
         }
         print(".", end="", flush=True)
         if wait:
