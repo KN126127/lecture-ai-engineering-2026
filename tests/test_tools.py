@@ -51,7 +51,7 @@ def test_make_quiz_selects_a_term_from_requested_lecture(monkeypatch):
 
 
 def test_make_quiz_reports_when_lecture_has_no_terms():
-    assert "第4回の用語はありません" in tools.make_quiz(4)
+    assert "第99回の用語はありません" in tools.make_quiz(99)
 
 
 def test_learning_log_records_structured_learning_details(tmp_path, monkeypatch):
